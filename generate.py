@@ -50,15 +50,6 @@ class CaseModel(object):
         parameters = ', '.join(all_parameters_placeholder)
         return parameters
 
-    # def case_description(self):
-    #     return 'case .' + self.case
-    #
-    # def pattern_description(self):
-    #     return '''
-    # public static var {case}Pattern: String {{
-    #     return "{pattern}"
-    # }}
-    #     '''.format(case=self.case, pattern=self.pattern)
     @LazyProperty
     def parameters_str(self):
         return ', '.join([x[0] for x in self.parameters])
@@ -120,6 +111,14 @@ class RouterEntity(object):
         return _tuples
 
 
+def snake_to_camel(snake_format):
+     camel_format = ''
+     if isinstance(snake_format, str):
+         for _s_ in snake_format.split('_'):
+             camel_format += _s_.capitalize()
+     return camel_format[:1].lower() + camel_format[1:]
+
+
 def camel_to_snake(camel_format):
     snake_format=''
     if isinstance(camel_format, str):
@@ -176,5 +175,5 @@ if __name__ == '__main__':
         env = JinjaEnvironment(line_statement_prefix="#", loader=FileSystemLoader(searchpath='./'))
         tmpl = env.get_template(template)
         models = [(item.name, item.case_models) for item in parse_file(text)]
-        text = tmpl.render(models=models)
+        text = tmpl.render(models=models, snake_to_camel=snake_to_camel)
         f2.write(text)
