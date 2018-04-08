@@ -1,0 +1,44 @@
+# for name, case_models in models
+extension {{ name }} {
+    public var path: String {
+        switch self {
+        # for case_model in case_models
+        # if case_model.parameter_str_in_path
+        case let .{{ case_model.name }}({{ case_model.parameter_str_in_path }}): return "{{ case_model.path }}"
+        # else
+        case .{{ case_model.name }}: return "{{ case_model.path }}"
+        # endif
+        # endfor
+        }
+     }
+
+     public var parameter: [String : Any]? {
+        switch self {
+        # for case_model in case_models
+        # if case_model.parameters
+        case let case .{{ case_model.name }}({{ case_model.parameters_str }}):
+            var p: [String: Any] = [:]
+            # for _key, _type in case_model.parameters
+            # if _type.endswith('?')
+            if let {{ _key }} = {{ _key }} {
+                p["{{ _key }}"] = {{ _key }}
+            }
+            # else
+            p["{{ _key }}"] = {{ _key }}
+            # endif
+            # endfor
+            return p
+        # endif
+        # endfor
+        }
+     }
+
+    # for case_model in case_models
+    public static var {{ case_model.name }}Pattern: String {
+        return "{{ case_model.pattern }}"
+    }
+    # endfor
+}
+
+
+# endfor

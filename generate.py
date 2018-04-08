@@ -1,8 +1,8 @@
 import getopt
 import re
-
 import sys
-
+from jinja2 import Environment as JinjaEnvironment
+from jinja2.loaders import FileSystemLoader
 
 class LazyProperty:
     def __init__(self, func):
@@ -13,7 +13,7 @@ class LazyProperty:
             return self
         else:
             value = self.func(instance)
-            setattr(owner, self.func.__name__, value)
+            setattr(instance, self.func.__name__, value)
             return value
 
 
@@ -21,7 +21,7 @@ class CaseModel(object):
     pattern = re.compile('\\((.*?)\)')
 
     def __init__(self, case, path, pattern, parameters):
-        self.case = case
+        self.name = case
         self.path = path
         self.pattern = pattern
         self.parameters = parameters
@@ -32,55 +32,42 @@ class CaseModel(object):
             path: {path},
             pattern: {pattern},
             parameters: {parameters}
-        """.format(name=self.case, pattern=self.pattern, path=self.path, parameters=self.parameters)
+        """.format(name=self.name, pattern=self.pattern, path=self.path, parameters=self.parameters)
 
-    def case_description(self):
-        return 'case .' + self.case
+    @LazyProperty
+    def has_parameters_in_path(self):
+        return self.parameter_str_in_path is not None
 
-    def pattern_description(self):
-        return '''
-    public static var {case}Pattern: String {{
-        return "{pattern}"
-    }}
-        '''.format(case=self.case, pattern=self.pattern)
-
-    def path_description(self):
+    @LazyProperty
+    def parameter_str_in_path(self):
         parameters_in_path = re.findall(CaseModel.pattern, self.path)
         if not self.parameters or not parameters_in_path:
-            return 'case .{case}: return "{path}"'.format(case=self.case, path=self.path)
-
+            return None
         all_parameters_placeholder = ['_'] * len(self.parameters)
         for i in range(len(parameters_in_path)):
             all_parameters_placeholder[i] = parameters_in_path[i]
 
         parameters = ', '.join(all_parameters_placeholder)
-        return 'case let .{case}({parameters}): return "{path}"'\
-            .format(case=self.case, parameters=parameters, path=self.path)
+        return parameters
+
+    # def case_description(self):
+    #     return 'case .' + self.case
+    #
+    # def pattern_description(self):
+    #     return '''
+    # public static var {case}Pattern: String {{
+    #     return "{pattern}"
+    # }}
+    #     '''.format(case=self.case, pattern=self.pattern)
+    @LazyProperty
+    def parameters_str(self):
+        return ', '.join([x[0] for x in self.parameters])
 
     def _has_optional_parameter(self):
         for (_, value) in self.parameters:
             if value.endswith('?'):
                 return True
 
-    def parameter_description(self):
-        if not self.parameters:
-            return None
-        p = [x[0] for x in self.parameters]
-        str = 'case let case .{case}({parameters}):'.format(case=self.case, parameters=', '.join(p))
-        if self._has_optional_parameter():
-            str += '\n\t\t\tvar p: [String: Any] = [:]'
-            for (k, v) in self.parameters:
-                if v.endswith('?'):
-                    str += '\n\t\t\tif let value = {attr} {{ p["{attr}"] = value }}'.format(attr=k)
-                else:
-                    str += '\n\t\t\tp["{k}"] = {k}'.format(k=k, v=v)
-            str += '\n\t\t\treturn p'
-            return str
-        else:
-            str += '\n\t\t\treturn ['
-            for (k, v) in self.parameters:
-                str += '\n\t\t\t\t"{key}": {key},'.format(key=k)
-            return str + '\n\t\t\t]'
 
 class RouterEntity(object):
     """
@@ -95,25 +82,7 @@ class RouterEntity(object):
         """
         self.name = name
         self._content = content
-
-    def router_description(self):
-        cases = self._parse_to_case()
-        path = '\tpublic var path: String {'
-        path += '\n\t\tswitch self {'
-        parameters = '\tpublic var parameter: String {'
-        parameters += '\n\t\tswitch self {'
-        pattern = ''
-        for case in cases:
-            path += '\n\t\t' + case.path_description()
-            parameters += '\n\t\t' + case.parameter_description()
-            pattern += case.pattern_description()
-        path += '\n\t}'
-        parameters += '\n\t}'
-
-        result = 'extension {entity} {{\n'.format(entity=self.name)
-        result += '\n'.join([path, parameters, pattern])
-        result += '\n}\n'
-        return result
+        self.case_models = list(self._parse_to_case())
 
     def _parse_to_case(self):
         cases = re.findall(RouterEntity.pattern, self._content)
@@ -170,31 +139,42 @@ def parse_file(text):
         yield RouterEntity(name=name, content=content)
 
 
-if __name__ == '__main__':
+def parse_args():
     try:
-        opts, args = getopt.getopt(sys.argv[1:], 'hi:o:', ['input=', 'output='])
+        opts, args = getopt.getopt(sys.argv[1:], 'hi:o:t:', ['input=', 'output=', 'tmpl='])
     except getopt.GetoptError:
-        print('Error: -i <inputfile> -o <outputfile>')
-        print('or: -input <inputfile> -output <outputfile>')
+        print('Error: -i <inputfile> -o [outputfile]')
+        print('or: -input <inputfile> -output [outputfile]')
         exit()
+
+    output_file = './Router.Generate.swift'
+    template = './tmpl'
 
     for opt, arg in opts:
         if opt == "-h":
-            print('-i <inputfile> -o <outputfile>')
-            print('or: -input <inputfile> -output <outputfile>')
+            print('-i <inputfile> -o [outputfile] -t [template]')
+            print('or: -input <inputfile> --output [outputfile] --tmpl [template]')
             exit()
         elif opt in ('-i', '--input'):
             input_file = arg
         elif opt in ('-o', '--output'):
             output_file = arg
+        elif opt in ('-t', '--template'):
+            template = arg
 
     if not input_file or not output_file:
-        print('Error: -i <inputfile> -o <outputfile>')
-        print('or: -input <inputfile> -output <outputfile>')
-        exit()
+        print('miss input file: -i <inputfile> or: -input <inputfile>')
+        print('')
+
+    return (input_file, output_file, template)
+
+if __name__ == '__main__':
+    input_file, output_file, template = parse_args()
 
     with open(input_file, 'r') as f1, open(output_file, 'wt') as f2:
         text = f1.read()
-        parse = '\n\n'.join([item.router_description() for item in parse_file(text)])
-        f2.write(parse)
-        
+        env = JinjaEnvironment(line_statement_prefix="#", loader=FileSystemLoader(searchpath='./'))
+        tmpl = env.get_template(template)
+        models = [(item.name, item.case_models) for item in parse_file(text)]
+        text = tmpl.render(models=models)
+        f2.write(text)
