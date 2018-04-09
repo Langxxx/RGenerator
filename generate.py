@@ -65,7 +65,7 @@ class RouterEntity(object):
     """
         parse all case for one swift enum type
     """
-    pattern = re.compile('@pattern(.*?)\s+case\s+(.*?)\((.*?)\)')
+    pattern = re.compile('@pattern(.*?)\s+case\s+(\w*)\(?(.*)\)?')
 
     def __init__(self, name, content):
         """
@@ -75,10 +75,12 @@ class RouterEntity(object):
         self.name = name
         self._content = content
         self.case_models = list(self._parse_to_case())
+        self.has_no_parameter_case = next((case for case in self.case_models if not case.parameters), None) is not None
 
     def _parse_to_case(self):
         cases = re.findall(RouterEntity.pattern, self._content)
         for case in cases:
+            parameters = []
             url_pattern = case[0]
             if not url_pattern:
                 url_pattern = "/" + camel_to_snake(case[1])
@@ -129,7 +131,7 @@ def camel_to_snake(camel_format):
 
 
 def parse_file(text):
-    route_enum_pattern = re.compile('(?:@name\s+(.+?)\s+|enum\s+(\w+?)\s*:).*?\{(.*?)\}', re.S)
+    route_enum_pattern = re.compile('(?:@name\s+(.+?)\s+|enum\s+(\w+):?[^\n]*?\{)(.*?)\}', re.S)
     cases = re.findall(route_enum_pattern, text)
     for case in cases:
         content = case[2].strip()
@@ -173,12 +175,11 @@ def parse_args():
 
 if __name__ == '__main__':
     input_file, output_file, template = parse_args()
-    print(os.path.abspath(os.curdir))
 
     with open(input_file, 'r', encoding='utf-8') as f1, open(output_file, 'wt') as f2:
         text = f1.read()
         env = JinjaEnvironment(line_statement_prefix="#", loader=FileSystemLoader(searchpath=['./tmpl', 'Pods/RGenerator/tmpl']))
         tmpl = env.get_template(template)
-        models = [(item.name, item.case_models) for item in parse_file(text)]
+        models = [(item.name, item.case_models, item.has_no_parameter_case) for item in parse_file(text)]
         text = tmpl.render(models=models, snake_to_camel=snake_to_camel)
         f2.write(text)
