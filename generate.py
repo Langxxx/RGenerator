@@ -1,4 +1,5 @@
 import getopt
+import os
 import re
 import sys
 from jinja2 import Environment as JinjaEnvironment
@@ -146,8 +147,8 @@ def parse_args():
         print('or: -input <inputfile> -output [outputfile]')
         exit()
 
-    output_file = './Router.Generate.swift'
-    template = './tmpl'
+    template = 'tmpl'
+    output_file = ''
 
     for opt, arg in opts:
         if opt == "-h":
@@ -161,6 +162,9 @@ def parse_args():
         elif opt in ('-t', '--template'):
             template = arg
 
+    if input_file and not output_file:
+        output_file = os.path.dirname(input_file) + '/Router.Generate.swift'
+
     if not input_file or not output_file:
         print('miss input file: -i <inputfile> or: -input <inputfile>')
         print('')
@@ -169,10 +173,11 @@ def parse_args():
 
 if __name__ == '__main__':
     input_file, output_file, template = parse_args()
+    print(os.path.abspath(os.curdir))
 
-    with open(input_file, 'r') as f1, open(output_file, 'wt') as f2:
+    with open(input_file, 'r', encoding='utf-8') as f1, open(output_file, 'wt') as f2:
         text = f1.read()
-        env = JinjaEnvironment(line_statement_prefix="#", loader=FileSystemLoader(searchpath='./'))
+        env = JinjaEnvironment(line_statement_prefix="#", loader=FileSystemLoader(searchpath=['./tmpl', 'Pods/RGenerator/tmpl']))
         tmpl = env.get_template(template)
         models = [(item.name, item.case_models) for item in parse_file(text)]
         text = tmpl.render(models=models, snake_to_camel=snake_to_camel)
